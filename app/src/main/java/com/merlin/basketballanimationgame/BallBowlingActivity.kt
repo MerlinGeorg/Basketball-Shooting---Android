@@ -75,6 +75,44 @@ fun BasketballAnimation() {
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     var score by remember { mutableStateOf(0)}
 
+    // Bluetooth manager setup
+    val bluetoothManager = remember { BluetoothManager(context) }
+    val connectionState by bluetoothManager.connectionState.collectAsState()
+    val pairedDevices by bluetoothManager.pairedDevices.collectAsState()
+
+    // Bluetooth UI state
+    var showBluetoothUI by remember { mutableStateOf(false) }
+    var showDevicesList by remember { mutableStateOf(false) }
+
+    // Permission request launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            scope.launch {
+                bluetoothManager.updatePairedDevices()
+            }
+        } else {
+            Toast.makeText(context, "Bluetooth permissions are required to share score", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Enable Bluetooth launcher
+    val enableBluetoothLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (bluetoothManager.isBluetoothEnabled) {
+            scope.launch {
+                bluetoothManager.updatePairedDevices()
+            }
+        }
+    }
+
+    // Request required permissions on launch
+    LaunchedEffect(Unit) {
+        permissionLauncher.launch(BluetoothPermissionsHelper.getRequiredPermissions())
+    }
 
     // Animation state
     val ballXPosition = remember { Animatable(0.2f) }
@@ -175,6 +213,20 @@ fun BasketballAnimation() {
                         animationSpec = tween(durationMillis = 1100, easing = EaseInOutQuad)
                     )
                 }
+            }
+        }
+    }
+
+    // Register and unregister the shake detector
+    DisposableEffect(Unit) {
+
+
+        onDispose {
+
+
+            // Clean up Bluetooth connections
+            runBlocking {
+                bluetoothManager.close()
             }
         }
     }
@@ -353,6 +405,24 @@ fun BasketballAnimation() {
 
                     Spacer(modifier = Modifier.size(8.dp)) // Add space between score and icon
 
+                    Icon(
+                        imageVector = Icons.Default.Share, // Use a share icon from Material Icons
+                        contentDescription = "Share Score",
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clickable {
+                                // Trigger Bluetooth sharing functionality here
+                                if (bluetoothManager.isBluetoothEnabled) {
+                                    scope.launch {
+                                        bluetoothManager.updatePairedDevices()
+                                        showBluetoothUI = true // Show Bluetooth UI if needed
+                                    }
+                                } else {
+                                    enableBluetoothLauncher.launch(BluetoothPermissionsHelper.getEnableBluetoothIntent())
+                                }
+                            },
+                        tint = Color.Black
+                    )
 
                 }
             }
@@ -383,7 +453,216 @@ fun BasketballAnimation() {
         }
     }
 
+    // Bluetooth UI Dialog
+    if (showBluetoothUI) {
+        Dialog(onDismissRequest = { showBluetoothUI = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Basketball Score Sharing",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
 
+                    // Bluetooth Status
+                    Text(
+                        "Status: ${connectionState.name}",
+                        color = when (connectionState) {
+                            BluetoothManager.ConnectionState.CONNECTED -> Color.Green
+                            BluetoothManager.ConnectionState.ERROR -> Color.Red
+                            else -> MaterialTheme.colorScheme.onSurface
+                        },
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // First show device list if requested
+                    if (showDevicesList) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                        ) {
+                            // When displaying device names in the list
+                            items(pairedDevices) { device ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                bluetoothManager.connectToDevice(device)
+                                                showDevicesList = false
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        // Safely access device name with proper permission check
+                                        val deviceName = try {
+                                            if (BluetoothPermissionsHelper.hasRequiredPermissions(context)) {
+                                                device.name ?: "Unknown Device"
+                                            } else {
+                                                "Unknown Device"
+                                            }
+                                        } catch (e: SecurityException) {
+                                            "Unknown Device"
+                                        }
+
+                                        Text(deviceName)
+                                    }
+
+                                    Text(
+                                        text = device.address,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Divider(modifier = Modifier.padding(top = 8.dp))
+                                }
+                            }
+
+                            item {
+                                if (pairedDevices.isEmpty()) {
+                                    Text(
+                                        "No paired devices found. Please pair a device in Bluetooth settings.",
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(8.dp)
+                                    )
+                                }
+
+                                Button(
+                                    onClick = { showDevicesList = false },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp)
+                                ) {
+                                    Text("Cancel")
+                                }
+                            }
+                        }
+                    } else {
+                        // Permission Check
+                        if (!BluetoothPermissionsHelper.hasRequiredPermissions(context)) {
+                            Button(
+                                onClick = {
+                                    permissionLauncher.launch(BluetoothPermissionsHelper.getRequiredPermissions())
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Grant Bluetooth Permissions")
+                            }
+                        } else if (!bluetoothManager.isBluetoothEnabled) {
+                            // Enable Bluetooth
+                            Button(
+                                onClick = {
+                                    try {
+                                        val enableBtIntent = BluetoothAdapter.getDefaultAdapter()?.let {
+                                            android.content.Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                                        }
+                                        if (enableBtIntent != null) {
+                                            enableBluetoothLauncher.launch(enableBtIntent)
+                                        } else {
+                                            Toast.makeText(context, "Bluetooth not available on this device", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Failed to enable Bluetooth", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Enable Bluetooth")
+                            }
+                        } else {
+                            // Connection Actions
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = {
+                                        showDevicesList = true
+                                        scope.launch {
+                                            bluetoothManager.updatePairedDevices()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Connect to Device")
+                                }
+
+                                Spacer(modifier = Modifier.size(8.dp))
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            bluetoothManager.startServer()
+                                        }
+                                        Toast.makeText(context, "Waiting for connection...", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Wait for Connection")
+                                }
+                            }
+
+                            // Connected device actions
+                            if (connectionState == BluetoothManager.ConnectionState.CONNECTED) {
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val success = bluetoothManager.sendScore(score)
+                                            val message = if (success) "Score sent!" else "Failed to send score"
+                                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Send Current Score: $score")
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            bluetoothManager.close()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Disconnect")
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Close button
+                        OutlinedButton(
+                            onClick = { showBluetoothUI = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Close")
+                        }
+                    }
+                }
+            }
+        }
+    }
 
 }
 
