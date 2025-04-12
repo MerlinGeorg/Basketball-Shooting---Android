@@ -217,12 +217,27 @@ fun BasketballAnimation() {
         }
     }
 
+    // Setup shake detector
+    val shakeContext = LocalContext.current
+    val shakeDetector = remember {
+        ShakeDetector(
+            context = shakeContext,
+            shakeThreshold = 5.0f,
+            cooldownPeriod = 1000L,
+            onShakeDetected = {
+                scope.launch {
+                    shootBall()
+                }
+            }
+        )
+    }
+
     // Register and unregister the shake detector
     DisposableEffect(Unit) {
-
+        shakeDetector.start()
 
         onDispose {
-
+            shakeDetector.stop()
 
             // Clean up Bluetooth connections
             runBlocking {
@@ -230,6 +245,7 @@ fun BasketballAnimation() {
             }
         }
     }
+
 
 
     Box(
