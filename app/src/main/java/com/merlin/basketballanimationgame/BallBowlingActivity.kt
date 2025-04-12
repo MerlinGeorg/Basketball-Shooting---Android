@@ -73,7 +73,7 @@ fun BasketballAnimation() {
     val context = LocalContext.current
     var isAnimating by remember { mutableStateOf(false) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
-
+    var score by remember { mutableStateOf(0)}
 
 
     // Animation state
@@ -151,7 +151,7 @@ fun BasketballAnimation() {
                     )
 
                     soundManager.playApplauseSound()
-
+                    score++
                     // Reset after a delay
                     delay(800)
                     resetAnimation()
@@ -339,7 +339,23 @@ fun BasketballAnimation() {
                 )
             }
 
+            Box(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Display the score with share icon
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AnimatedScoreDisplay(score = score)
 
+                    Spacer(modifier = Modifier.size(8.dp)) // Add space between score and icon
+
+
+                }
+            }
 
             // Button to trigger the animation
             Column(
