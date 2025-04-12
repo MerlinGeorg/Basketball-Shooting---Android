@@ -62,7 +62,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.merlin.basketballanimationgame.BluetoothManager
 import com.merlin.basketballanimationgame.BluetoothPermissionsHelper
-//import com.merlin.basketballanimationgame.AnimatedScoreDisplay
 import com.merlin.basketballanimationgame.ShakeDetector
 import kotlinx.coroutines.runBlocking
 import androidx.compose.ui.window.Dialog
@@ -103,6 +102,7 @@ fun BasketballAnimation() {
         }
     }
 
+    val soundManager = rememberSoundManager()
 
     fun shootBall() {
         if (!isAnimating) {
@@ -150,6 +150,7 @@ fun BasketballAnimation() {
                         animationSpec = tween(durationMillis = 600, easing = LinearEasing)
                     )
 
+                    soundManager.playApplauseSound()
 
                     // Reset after a delay
                     delay(800)
